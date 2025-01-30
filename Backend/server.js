@@ -9,6 +9,7 @@ const db = require('./config/db');
 const productsRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
+const OrdersRoutes = require('./routes/orders');
 
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/users', require('./routes/auth.routes'));
 app.use('/api/products', productsRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/orders', OrdersRoutes);
 
 // Ruta principal
 app.get('/', (req, res) => {
