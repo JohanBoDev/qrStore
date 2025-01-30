@@ -33,7 +33,7 @@ const getProducts = async (req, res) => {
         const offset = (page - 1) * limit;
 
         // Construcción dinámica de la consulta SQL
-        let query = "SELECT * FROM qrstore.products WHERE 1=1";
+        let query = "SELECT * FROM qrstore.products WHERE deleted_at IS NULL"; // 🔹 Excluir eliminados
         let queryParams = [];
 
         // 🔹 Filtro por categoría
@@ -88,7 +88,7 @@ const getProducts = async (req, res) => {
         const [products] = await db.query(query, queryParams);
 
         // Obtener el total de productos sin paginación
-        let countQuery = "SELECT COUNT(*) AS total FROM qrstore.products WHERE 1=1";
+        let countQuery = "SELECT COUNT(*) AS total FROM qrstore.products WHERE deleted_at IS NULL"; // 🔹 Excluir eliminados
         let countParams = [];
 
         if (search) {
@@ -200,7 +200,7 @@ const updateProduct = async (req, res) => {
     }
 };
 
-
+// Eliminar un producto (Soft Delete)
 const softDeleteProduct = async (req, res) => {
     try {
         const { id } = req.params;
@@ -228,5 +228,28 @@ const softDeleteProduct = async (req, res) => {
     }
 };
 
+// Restaurar un producto eliminado
+const restoreProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
 
-module.exports = { createProduct, getProducts, getProductById, updateProduct, softDeleteProduct };
+        // Verificar si el producto existe y está eliminado
+        const [existingProduct] = await db.query("SELECT * FROM qrstore.products WHERE id = ? AND deleted_at IS NOT NULL", [id]);
+
+        if (existingProduct.length === 0) {
+            return res.status(404).json({ message: "Producto no encontrado o ya activo" });
+        }
+
+        // Restaurar el producto
+        await db.query("UPDATE qrstore.products SET deleted_at = NULL WHERE id = ?", [id]);
+
+        res.json({ message: "Producto restaurado con éxito" });
+
+    } catch (error) {
+        console.error("Error restaurando producto:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+
+module.exports = { createProduct, getProducts, getProductById, updateProduct, softDeleteProduct, restoreProduct };
