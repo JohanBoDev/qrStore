@@ -201,4 +201,32 @@ const updateProduct = async (req, res) => {
 };
 
 
-module.exports = { createProduct, getProducts, getProductById, updateProduct };
+const softDeleteProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Verificar si el producto existe
+        const [existingProduct] = await db.query("SELECT * FROM qrstore.products WHERE id = ?", [id]);
+
+        if (existingProduct.length === 0) {
+            return res.status(404).json({ message: "Producto no encontrado" });
+        }
+
+        // Verificar si el producto ya está eliminado
+        if (existingProduct[0].deleted_at) {
+            return res.status(400).json({ message: "El producto ya está eliminado" });
+        }
+
+        // Marcar como eliminado (Soft Delete)
+        await db.query("UPDATE qrstore.products SET deleted_at = NOW() WHERE id = ?", [id]);
+
+        res.json({ message: "Producto marcado como eliminado" });
+
+    } catch (error) {
+        console.error("Error en Soft Delete:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
+};
+
+
+module.exports = { createProduct, getProducts, getProductById, updateProduct, softDeleteProduct };
