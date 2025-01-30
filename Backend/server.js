@@ -10,6 +10,7 @@ const productsRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
 const cartRoutes = require('./routes/cart');
 const OrdersRoutes = require('./routes/orders');
+const shipmentsRoutes = require ('./routes/shipments');
 
 
 const app = express();
@@ -44,6 +45,7 @@ app.use('/api/products', productsRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', OrdersRoutes);
+app.use('/api/shipments', shipmentsRoutes);
 
 // Ruta principal
 app.get('/', (req, res) => {

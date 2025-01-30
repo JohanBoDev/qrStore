@@ -1,5 +1,5 @@
 const db = require('../config/db'); // Conexión a MySQL
-const { get } = require('../routes/products');
+
 
 const createProduct = async (req, res) => {
     try {
