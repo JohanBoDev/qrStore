@@ -1,162 +1,193 @@
-const User = require("../models/user.model");
+const db = require("../config/db"); // Conexión a MySQL con mysql2/promise
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 
-// Registro de usuario
-exports.register = (req, res) => {
-  // Validación de entrada
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
+// 📌 Registro de usuario
+exports.register = async (req, res) => {
+    try {
+        // Validación de entrada
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
-  const { name, email, password, phone, address } = req.body;
+        const { name, email, password, phone, address } = req.body;
 
-  // Verificar si el usuario ya existe
-  User.getByEmail(email, (err, results) => {
-    if (results.length > 0)
-      return res.status(400).json({ error: "El usuario ya existe" });
+        // Verificar si el usuario ya existe
+        const [existingUser] = await db.query("SELECT * FROM qrstore.users WHERE email = ?", [email]);
 
-    // Hashear la contraseña antes de guardarla
-    bcrypt.hash(password, 10, (err, hashedPassword) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ error: "Error al encriptar la contraseña" });
+        if (existingUser.length > 0) {
+            return res.status(400).json({ error: "El usuario ya existe" });
+        }
 
-      const newUser = { name, email, password: hashedPassword, phone, address };
+        // Hashear la contraseña
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Guardar usuario en la base de datos
-      User.create(newUser, (err, result) => {
-        if (err) return res.status(500).json({ error: err.message });
+        // Insertar nuevo usuario en la base de datos
+        const query = `
+            INSERT INTO qrstore.users (name, email, password, phone, address, created_at) 
+            VALUES (?, ?, ?, ?, ?, NOW())
+        `;
+        const [result] = await db.query(query, [name, email, hashedPassword, phone, address]);
 
-        res.status(201).json({ message: "Usuario registrado correctamente" });
-      });
-    });
-  });
+        res.status(201).json({ message: "Usuario registrado correctamente", user_id: result.insertId });
+
+    } catch (error) {
+        console.error("Error en el registro:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Inicio de sesión
-exports.login = (req, res) => {
-  const { email, password } = req.body;
+// 📌 Inicio de sesión
+exports.login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
-  User.getByEmail(email, (err, results) => {
-    if (results.length === 0)
-      return res.status(404).json({ error: "Usuario no encontrado" });
+        // Verificar si el usuario existe
+        const [users] = await db.query("SELECT * FROM qrstore.users WHERE email = ?", [email]);
 
-    const user = results[0];
+        if (users.length === 0) {
+            return res.status(404).json({ error: "Usuario no encontrado" });
+        }
 
-    // Verificar la contraseña
-    bcrypt.compare(password, user.password, (err, isMatch) => {
-      if (err || !isMatch)
-        return res.status(401).json({ error: "Contraseña incorrecta" });
+        const user = users[0];
 
-      // Generar token JWT
-      const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN }
-      );
+        // Verificar la contraseña
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ error: "Contraseña incorrecta" });
+        }
 
-      res.json({
-        message: "Login exitoso",
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          address: user.address,
-          role: user.role,
-        },
-      });
-    });
-  });
+        // Generar token JWT
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role },
+            process.env.JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN }
+        );
+
+        res.json({
+            message: "Login exitoso",
+            token,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                address: user.address,
+                role: user.role,
+            },
+        });
+
+    } catch (error) {
+        console.error("Error en el login:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Obtener todos los usuarios (solo admins)
-exports.getAllUsers = (req, res) => {
-  if (req.user.role !== "admin")
-    return res.status(403).json({ error: "Acceso denegado" });
+// 📌 Obtener todos los usuarios (solo admins)
+exports.getAllUsers = async (req, res) => {
+    try {
+        if (req.user.role !== "admin") {
+            return res.status(403).json({ error: "Acceso denegado" });
+        }
 
-  User.getAll((err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
-  });
+        const [users] = await db.query("SELECT id, name, email, phone, address, role FROM qrstore.users");
+        res.json(users);
+
+    } catch (error) {
+        console.error("Error obteniendo usuarios:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Obtener un usuario por su ID (solo admins o el propio usuario)
-exports.getUserById = (req, res) => {
-  const { id } = req.params;
+// 📌 Obtener un usuario por su ID (solo admins o el propio usuario)
+exports.getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
 
-  if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
-    return res.status(403).json({ error: "Acceso denegado" });
-  }
+        if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: "Acceso denegado" });
+        }
 
-  User.getById(id, (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (result.length === 0)
-      return res.status(404).json({ message: "Usuario no encontrado" });
+        const [user] = await db.query("SELECT id, name, email, phone, address, role FROM qrstore.users WHERE id = ?", [id]);
 
-    res.json(result[0]);
-  });
+        if (user.length === 0) {
+            return res.status(404).json({ message: "Usuario no encontrado" });
+        }
+
+        res.json(user[0]);
+
+    } catch (error) {
+        console.error("Error obteniendo usuario:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Actualizar un usuario (solo admins o el propio usuario)
-exports.updateUser = (req, res) => {
-  const { id } = req.params;
-  const { name, phone, address, role } = req.body;
+// 📌 Actualizar un usuario (solo admins o el propio usuario)
+exports.updateUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, phone, address, role } = req.body;
 
-  if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
-    return res.status(403).json({ error: "Acceso denegado" });
-  }
+        if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: "Acceso denegado" });
+        }
 
-  const updatedData = { name, phone, address, role };
+        const query = "UPDATE qrstore.users SET name = ?, phone = ?, address = ?, role = ? WHERE id = ?";
+        await db.query(query, [name, phone, address, role, id]);
 
-  User.update(id, updatedData, (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: "Usuario actualizado correctamente" });
-  });
+        res.json({ message: "Usuario actualizado correctamente" });
+
+    } catch (error) {
+        console.error("Error actualizando usuario:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Actualizar la contraseña de un usuario (solo el propio usuario)
-exports.updatePassword = (req, res) => {
-  const { id } = req.params;
-  const { newPassword } = req.body;
+// 📌 Actualizar la contraseña de un usuario (solo el propio usuario)
+exports.updatePassword = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newPassword } = req.body;
 
-  if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
-    return res.status(403).json({ error: "Acceso denegado" });
-  }
+        if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: "Acceso denegado" });
+        }
 
-  if (!newPassword)
-    return res
-      .status(400)
-      .json({ error: "La nueva contraseña es obligatoria" });
+        if (!newPassword) {
+            return res.status(400).json({ error: "La nueva contraseña es obligatoria" });
+        }
 
-  bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
-    if (err)
-      return res
-        .status(500)
-        .json({ error: "Error al encriptar la contraseña" });
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    User.updatePassword(id, hashedPassword, (err, result) => {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ message: "Contraseña actualizada correctamente" });
-    });
-  });
+        const query = "UPDATE qrstore.users SET password = ? WHERE id = ?";
+        await db.query(query, [hashedPassword, id]);
+
+        res.json({ message: "Contraseña actualizada correctamente" });
+
+    } catch (error) {
+        console.error("Error actualizando contraseña:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };
 
-// Eliminar un usuario (solo admins o el propio usuario)
-exports.deleteUser = (req, res) => {
-  const { id } = req.params;
+// 📌 Eliminar un usuario (solo admins o el propio usuario)
+exports.deleteUser = async (req, res) => {
+    try {
+        const { id } = req.params;
 
-  if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
-    return res.status(403).json({ error: "Acceso denegado" });
-  }
+        if (req.user.role !== "admin" && req.user.id !== parseInt(id)) {
+            return res.status(403).json({ error: "Acceso denegado" });
+        }
 
-  User.delete(id, (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ message: "Usuario eliminado correctamente" });
-  });
+        const query = "DELETE FROM qrstore.users WHERE id = ?";
+        await db.query(query, [id]);
+
+        res.json({ message: "Usuario eliminado correctamente" });
+
+    } catch (error) {
+        console.error("Error eliminando usuario:", error);
+        res.status(500).json({ error: "Error interno del servidor" });
+    }
 };

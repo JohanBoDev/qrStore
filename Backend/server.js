@@ -6,6 +6,8 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const db = require('./config/db');
+const productsRoutes = require('./routes/products');
+
 
 const app = express();
 
@@ -35,7 +37,7 @@ app.use('/api/', limiter);
 
 // Rutas
 app.use('/api/users', require('./routes/auth.routes'));
-
+app.use('/api/products', productsRoutes);
 // Ruta principal
 app.get('/', (req, res) => {
     res.send('API de QrStore funcionando 🚀');

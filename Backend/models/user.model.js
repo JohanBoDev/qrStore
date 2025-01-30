@@ -10,7 +10,7 @@ const User = {
     create: (data, callback) => {
         db.query('INSERT INTO users SET ?', data, callback);
     },
-
+    
     // Función para obtener todos los usuarios
     getAll: callback => {
         db.query('SELECT id, name, email, phone, address, profile_picture FROM users', callback);
